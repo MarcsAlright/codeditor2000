@@ -572,6 +572,16 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
             <span class="btn-label">Nuevo</span>
         </button>
+        <button id="btn-open-file" title="Abrir archivo HTML">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span class="btn-label">Abrir</span>
+        </button>
+        <button id="btn-refactor" title="Refactorizar código (formatear HTML)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <span class="btn-label">Refactorizar</span>
+        </button>
+        <!-- Input oculto para abrir archivos -->
+        <input type="file" id="file-input" accept=".html,.htm" style="display:none;">
     </div>
 
     <!-- Main Container -->
@@ -584,7 +594,12 @@
         <div id="preview-panel">
             <div id="preview-header">
                 <span>🌐 Vista Previa en Vivo</span>
-                <span id="preview-timestamp" style="font-size:11px;color:var(--text-muted);"></span>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <button id="btn-fullscreen-preview" title="Ver en pantalla completa" style="background:none;border:none;color:var(--text-muted);cursor:pointer;display:flex;align-items:center;padding:2px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                    </button>
+                    <span id="preview-timestamp" style="font-size:11px;color:var(--text-muted);"></span>
+                </div>
             </div>
             <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin" title="Vista Previa"></iframe>
         </div>
@@ -1410,6 +1425,64 @@
             initEditor(DEFAULT_HTML);
             showToast('⚠️ Error al cargar proyecto. Usando demo.', 'error');
         });
+        // ==================== NUEVAS FUNCIONALIDADES ====================
+
+        // 1. Abrir archivo HTML desde el disco
+        const fileInput = document.getElementById('file-input');
+        document.getElementById('btn-open-file').addEventListener('click', () => {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const content = event.target.result;
+                if (editorView) {
+                    editorView.dispatch({
+                        changes: { from: 0, to: editorView.state.doc.length, insert: content }
+                    });
+                    updatePreview();
+                    showToast('📂 Archivo cargado: ' + file.name, 'success');
+                }
+            };
+            reader.readAsText(file);
+            fileInput.value = ''; // permitir volver a abrir el mismo archivo
+        });
+
+        // 2. Vista previa en pantalla completa
+        document.getElementById('btn-fullscreen-preview').addEventListener('click', () => {
+            if (previewIframe.requestFullscreen) {
+                previewIframe.requestFullscreen();
+            } else if (previewIframe.webkitRequestFullscreen) { /* Safari */
+                previewIframe.webkitRequestFullscreen();
+            } else if (previewIframe.msRequestFullscreen) { /* IE11 */
+                previewIframe.msRequestFullscreen();
+            }
+        });
+
+        // 3. Refactorizador de código (formateo HTML simple)
+        function refactorCode() {
+            if (!editorView) return;
+            const code = editorView.state.doc.toString();
+            // Formateo básico de HTML: indentar etiquetas
+            let formatted = '';
+            let indent = 0;
+            const lines = code.replace(/>\s*</g, '>\n<').split('\n');
+            for (let line of lines) {
+                line = line.trim();
+                if (!line) continue;
+                if (line.match(/^<\/\w/)) indent = Math.max(0, indent - 1);
+                formatted += '  '.repeat(indent) + line + '\n';
+                if (line.match(/^<\w[^>]*[^/]>$/) && !line.match(/<(br|hr|img|input|meta|link)/i)) indent++;
+            }
+            editorView.dispatch({
+                changes: { from: 0, to: editorView.state.doc.length, insert: formatted.trim() }
+            });
+            updatePreview();
+            showToast('🧹 Código refactorizado (formateado)', 'success');
+        }
+        document.getElementById('btn-refactor').addEventListener('click', refactorCode);
 
         console.log('%c🔧 Explorador Dark-IDE v1.0 %c| %cComité de Expertos - Enero 2025',
             'color:#89B4FA;font-size:16px;', '', 'color:#A6ADC8;');
