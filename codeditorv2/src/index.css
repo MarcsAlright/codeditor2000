@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+@theme {
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  --font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --color-slate-850: #162032;
+  --color-slate-925: #0b1120;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 #1e293b;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+::selection {
+  background: #38bdf844;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0f172a;
+}
+
+.cm-editor {
+  height: 100% !important;
+  font-size: 13px !important;
+  background: #0f172a !important;
+}
+.cm-editor .cm-scroller {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  line-height: 1.55 !important;
+  overflow-x: auto !important;
+}
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+.cm-editor .cm-gutters {
+  background: #0f172a !important;
+  border-right: 1px solid #1e293b !important;
+  color: #475569 !important;
+}
+.cm-editor .cm-activeLineGutter {
+  background: #1e293b !important;
+  color: #94a3b8 !important;
+}
+.cm-editor .cm-activeLine {
+  background: #1e293b33 !important;
+}
+.cm-editor .cm-selectionBackground {
+  background: #1e40af44 !important;
+}
+.cm-editor.cm-focused .cm-selectionBackground {
+  background: #1e40af66 !important;
+}
+.cm-editor .cm-cursor {
+  border-left-color: #38bdf8 !important;
+  border-left-width: 2px !important;
+}
+.cm-editor .cm-matchingBracket {
+  background: #38bdf833 !important;
+  color: #e2e8f0 !important;
+  outline: 1px solid #38bdf855 !important;
+}
+.cm-editor .cm-foldGutter {
+  color: #475569 !important;
+}
+.cm-editor .cm-foldGutter:hover {
+  color: #94a3b8 !important;
+}
+
+.resizer-handle {
+  transition: background-color 0.15s;
+}
+.resizer-handle:hover,
+.resizer-handle:active {
+  background-color: #38bdf8 !important;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.15s ease-out;
+}
+.animate-slideInRight {
+  animation: slideInRight 0.2s ease-out;
+}
+.animate-slideInUp {
+  animation: slideInUp 0.2s ease-out;
+}
+
+.diff-added {
+  background: #16653433;
+  border-left: 3px solid #22c55e;
+  color: #86efac;
+}
+.diff-removed {
+  background: #991b1b33;
+  border-left: 3px solid #ef4444;
+  color: #fca5a5;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+.diff-unchanged {
+  color: #64748b;
+}
