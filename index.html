@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Explorador Dark-IDE | Sistema Integrado de Edición HTML</title>
+
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com">
+    </script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'bg-base': '#1E1E2E',
+                        'surface': '#313244',
+                        'surface-alt': '#45475A',
+                        'text-primary': '#CDD6F4',
+                        'text-muted': '#A6ADC8',
+                        'accent': '#89B4FA',
+                        'success': '#A6E3A1',
+                        'warning': '#F9E2AF',
+                        'error': '#F38BA8',
+                        'border': '#585B70',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- CodeMirror 6 from ESM CDN -->
+    <script type="module">
+        import { EditorView, basicSetup } from "https://esm.sh/codemirror@6.0.1";
+        import { html } from "https://esm.sh/@codemirror/lang-html@6.4.2";
+        import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6.1.2";
+        import { search, searchKeymap } from "https://esm.sh/@codemirror/search@6.5.0";
+        import { keymap } from "https://esm.sh/@codemirror/view@6.14.0";
+
+        window.CodeMirrorLib = { EditorView, basicSetup, html, oneDark, search, searchKeymap, keymap };
+    </script>
+
+    <!-- Dexie.js for IndexedDB -->
+    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.js">
+    </script>
+
+    <!-- DOMPurify for sanitization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js">
+    </script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest">
+    </script>
+
+    <style>
+        :root {
+            --bg-base: #1E1E2E;
+            --surface: #313244;
+            --surface-alt: #45475A;
+            --text-primary: #CDD6F4;
+            --text-muted: #A6ADC8;
+            --accent: #89B4FA;
+            --success: #A6E3A1;
+            --warning: #F9E2AF;
+            --error: #F38BA8;
+            --border: #585B70;
+            --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-base);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--surface-alt);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--border);
+        }
+
+        /* Toolbar */
+        #toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            z-index: 50;
+            flex-shrink: 0;
+            min-height: 48px;
+            flex-wrap: wrap;
+        }
+        #toolbar button {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--surface-alt);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.15s ease;
+            white-space: nowrap;
+        }
+        #toolbar button:hover {
+            background: var(--border);
+            border-color: var(--accent);
+            color: #fff;
+        }
+        #toolbar button.active {
+            background: var(--accent);
+            color: #1E1E2E;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+        #toolbar .separator {
+            width: 1px;
+            height: 24px;
+            background: var(--border);
+            margin: 0 4px;
+            flex-shrink: 0;
+        }
+        #toolbar .title-area {
+            font-weight: 700;
+            font-size: 15px;
+            color: var(--accent);
+            letter-spacing: 0.5px;
+            margin-right: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #toolbar .title-area svg {
+            color: var(--success);
+        }
+
+        /* Main layout */
+        #main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Editor panel */
+        #editor-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+            border-right: 1px solid var(--border);
+        }
+        #editor-wrapper {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+        #editor-wrapper .cm-editor {
+            height: 100%;
+            font-family: var(--font-mono) !important;
+            font-size: 14px !important;
+        }
+        #editor-wrapper .cm-editor .cm-scroller {
+            font-family: var(--font-mono) !important;
+            line-height: 1.6;
+        }
+        #editor-wrapper .cm-editor .cm-content {
+            font-family: var(--font-mono) !important;
+        }
+        #editor-wrapper .cm-editor.cm-focused {
+            outline: none !important;
+        }
+        .cm-editor .cm-gutters {
+            background: var(--surface) !important;
+            border-right: 1px solid var(--border) !important;
+            color: var(--text-muted) !important;
+        }
+        .cm-editor .cm-activeLineGutter {
+            background: var(--surface-alt) !important;
+        }
+
+        /* Preview panel */
+        #preview-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+            background: #fff;
+        }
+        #preview-panel.hidden-panel {
+            display: none;
+        }
+        #preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 12px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--text-muted);
+            flex-shrink: 0;
+        }
+        #preview-iframe {
+            flex: 1;
+            width: 100%;
+            border: none;
+            background: #fff;
+            min-height: 0;
+        }
+
+        /* Drawer overlay */
+        .drawer-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 80;
+            display: none;
+        }
+        .drawer-overlay.show {
+            display: block;
+        }
+
+        /* Drawer panels */
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: -480px;
+            width: 460px;
+            max-width: 95vw;
+            height: 100%;
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            z-index: 90;
+            transition: right 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            box-shadow: -8px 0 30px rgba(0, 0, 0, 0.6);
+        }
+        .drawer.open {
+            right: 0;
+        }
+        .drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            background: var(--surface-alt);
+        }
+        .drawer-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--accent);
+            margin: 0;
+        }
+        .drawer-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+        }
+        .drawer-close:hover {
+            color: #fff;
+            background: var(--border);
+        }
+        .drawer-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 100;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.show {
+            display: flex;
+        }
+        .modal {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            width: 85vw;
+            max-width: 900px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+        }
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface-alt);
+            border-radius: 12px 12px 0 0;
+        }
+        .modal-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent);
+            margin: 0;
+        }
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        /* Form elements */
+        textarea,
+        input[type="text"],
+        input[type="password"],
+        select {
+            background: var(--bg-base);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            resize: vertical;
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+        textarea:focus,
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.2);
+        }
+        textarea {
+            min-height: 120px;
+            line-height: 1.5;
+        }
+        label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            display: block;
+            margin-bottom: 4px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.15s;
+            background: var(--surface-alt);
+            color: var(--text-primary);
+        }
+        .btn:hover {
+            background: var(--border);
+        }
+        .btn-accent {
+            background: var(--accent);
+            color: #1E1E2E;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+        .btn-accent:hover {
+            background: #7aa2e0;
+        }
+        .btn-success {
+            background: var(--success);
+            color: #1E1E2E;
+            border-color: var(--success);
+            font-weight: 600;
+        }
+        .btn-error {
+            background: var(--error);
+            color: #1E1E2E;
+            border-color: var(--error);
+        }
+
+        /* Diff display */
+        .diff-container {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            line-height: 1.6;
+            background: var(--bg-base);
+            border-radius: 6px;
+            padding: 10px;
+            overflow: auto;
+            max-height: 350px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .diff-added {
+            background: rgba(166, 227, 161, 0.2);
+            color: var(--success);
+        }
+        .diff-removed {
+            background: rgba(243, 139, 168, 0.2);
+            color: var(--error);
+        }
+        .diff-unchanged {
+            color: var(--text-muted);
+        }
+
+        /* Match count badge */
+        .match-count {
+            background: var(--accent);
+            color: #1E1E2E;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        /* Toast notifications */
+        #toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast {
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #1E1E2E;
+            animation: slideIn 0.3s ease;
+            max-width: 400px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        }
+        .toast-info {
+            background: var(--accent);
+        }
+        .toast-success {
+            background: var(--success);
+        }
+        .toast-error {
+            background: var(--error);
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Responsive adjustments for 1280x720 */
+        @media (max-width: 1100px) {
+            #toolbar button span.btn-label {
+                display: none;
+            }
+            #toolbar button {
+                padding: 6px 10px;
+            }
+        }
+        @media (max-height: 700px) {
+            #toolbar {
+                padding: 4px 8px;
+                gap: 4px;
+                min-height: 40px;
+            }
+            #toolbar button {
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Toolbar -->
+    <div id="toolbar">
+        <div class="title-area">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            <span>Explorador Dark-IDE</span>
+        </div>
+        <button id="btn-preview" class="active" title="Alternar Vista Previa (F5)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span class="btn-label">Preview</span>
+        </button>
+        <div class="separator"></div>
+        <button id="btn-search" title="Búsqueda Avanzada de Bloques (Ctrl+Shift+F)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <span class="btn-label">Buscar Bloques</span>
+        </button>
+        <button id="btn-ia" title="Asistente IA Groq">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4v1h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2V6a4 4 0 0 1 4-4z"/><path d="M9 14l2 2 4-4"/></svg>
+            <span class="btn-label">IA Groq</span>
+        </button>
+        <div class="separator"></div>
+        <button id="btn-save" title="Guardar Proyecto (Ctrl+S)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <span class="btn-label">Guardar</span>
+        </button>
+        <button id="btn-export" title="Exportar HTML">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            <span class="btn-label">Exportar</span>
+        </button>
+        <button id="btn-new" title="Nuevo Proyecto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            <span class="btn-label">Nuevo</span>
+        </button>
+    </div>
+
+    <!-- Main Container -->
+    <div id="main-container">
+        <!-- Editor Panel -->
+        <div id="editor-panel">
+            <div id="editor-wrapper"></div>
+        </div>
+        <!-- Preview Panel -->
+        <div id="preview-panel">
+            <div id="preview-header">
+                <span>🌐 Vista Previa en Vivo</span>
+                <span id="preview-timestamp" style="font-size:11px;color:var(--text-muted);"></span>
+            </div>
+            <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin" title="Vista Previa"></iframe>
+        </div>
+    </div>
+
+    <!-- Drawer Overlay -->
+    <div class="drawer-overlay" id="drawer-overlay"></div>
+
+    <!-- IA Drawer -->
+    <div class="drawer" id="drawer-ia">
+        <div class="drawer-header">
+            <h3>🤖 Asistente IA - Groq</h3>
+            <button class="drawer-close" id="btn-close-ia-drawer">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="drawer-body">
+            <div>
+                <label>API Key de Groq</label>
+                <div style="display:flex;gap:6px;">
+                    <input type="password" id="groq-api-key" placeholder="gsk_..." style="flex:1;">
+                    <button class="btn" id="btn-save-api-key" title="Guardar API Key">🔒</button>
+                </div>
+                <small style="color:var(--text-muted);font-size:11px;">Se almacena cifrada en localStorage</small>
+            </div>
+            <div>
+                <label>Modelo</label>
+                <select id="groq-model">
+                    <option value="llama-3.1-70b-versatile">Llama 3.1 70B (Versatile)</option>
+                    <option value="llama-3.1-8b-instant">Llama 3.1 8B (Instant)</option>
+                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                </select>
+            </div>
+            <div>
+                <label>Prompt Template</label>
+                <select id="prompt-template">
+                    <option value="optimize">Optimizar HTML/CSS</option>
+                    <option value="refactor">Refactorizar Código</option>
+                    <option value="inventory">Crear Tabla de Inventario</option>
+                    <option value="responsive">Hacer Responsive</option>
+                    <option value="custom">Personalizado...</option>
+                </select>
+            </div>
+            <div id="custom-prompt-container" style="display:none;">
+                <label>Instrucción Personalizada</label>
+                <textarea id="custom-prompt" rows="3" placeholder="Ej: Agrega clases de Tailwind a esta tabla..."></textarea>
+            </div>
+            <button class="btn btn-accent" id="btn-send-to-groq" style="width:100%;justify-content:center;">
+                ⚡ Enviar a Groq
+            </button>
+            <div id="groq-status" style="font-size:12px;color:var(--text-muted);min-height:20px;"></div>
+            <div>
+                <label>Respuesta de IA / Diff</label>
+                <div class="diff-container" id="diff-display">
+                    <span style="color:var(--text-muted);">Selecciona código en el editor y envía a Groq para ver el diff aquí...</span>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;">
+                <button class="btn btn-success" id="btn-apply-ia-changes" style="flex:1;">✅ Aplicar Cambios</button>
+                <button class="btn btn-error" id="btn-discard-ia-changes" style="flex:1;">🗑️ Descartar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Modal -->
+    <div class="modal-overlay" id="search-modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>🔍 Búsqueda y Reemplazo de Bloques</h3>
+                <button class="drawer-close" id="btn-close-search-modal">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div>
+                    <label>Buscar (texto multilínea o RegEx)</label>
+                    <textarea id="search-find" rows="6" placeholder="Pega aquí el bloque de texto a buscar...&#10;Puede tener múltiples líneas."></textarea>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" id="search-regex" style="width:auto;"> Usar RegEx (flag /s)
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" id="search-case-sensitive" style="width:auto;"> Distinguir mayúsculas
+                    </label>
+                </div>
+                <div>
+                    <label>Reemplazar con</label>
+                    <textarea id="search-replace" rows="5" placeholder="Texto de reemplazo..."></textarea>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <button class="btn btn-accent" id="btn-find-matches">🔎 Buscar Coincidencias</button>
+                    <span id="match-count-display" style="font-size:13px;color:var(--text-muted);"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="btn-search-cancel">Cancelar</button>
+                <button class="btn btn-accent" id="btn-replace-one">Reemplazar Selección</button>
+                <button class="btn btn-success" id="btn-replace-all">✅ Reemplazar Todo</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script type="module">
+        // ==================== INITIALIZATION ====================
+        const {
+            EditorView,
+            basicSetup,
+            html,
+            oneDark,
+            search,
+            searchKeymap,
+            keymap
+        } = window.CodeMirrorLib;
+
+        // Default HTML template for ferretería
+        const DEFAULT_HTML = `<!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Ferretería El Martillo - Inventario</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+                h1 { color: #333; }
+                table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+                th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
+                th { background: #2c3e50; color: #fff; }
+                tr:nth-child(even) { background: #f9f9f9; }
+            </style>
+        </head>
+        <body>
+            <h1>🏗️ Ferretería El Martillo</h1>
+            <h2>Inventario de Productos - Enero 2025</h2>
+            <table>
+                <thead>
+                    <tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Stock</th><th>Precio</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>F-001</td><td>Martillo de Carpintero</td><td>Herramientas Manuales</td><td>45</td><td>$12.50</td></tr>
+                    <tr><td>F-002</td><td>Destornillador Plano 6mm</td><td>Herramientas Manuales</td><td>120</td><td>$4.75</td></tr>
+                    <tr><td>F-003</td><td>Taladro Inalámbrico 18V</td><td>Herramientas Eléctricas</td><td>18</td><td>$89.99</td></tr>
+                    <tr><td>F-004</td><td>Tornillos Acero 4mm (caja 100u)</td><td>Fijaciones</td><td>200</td><td>$6.30</td></tr>
+                    <tr><td>F-005</td><td>Pintura Látex Blanca 5L</td><td>Pinturas</td><td>32</td><td>$22.00</td></tr>
+                </tbody>
+            </table>
+            <p style="margin-top:15px; color:#666;">Última actualización: <span id="fecha"></span></p>
+            <script>document.getElementById('fecha').textContent = new Date().toLocaleDateString('es-AR');<\/script>
+        </body>
+        </html>`;
+
+        // ==================== INDEXEDDB SETUP ====================
+        const db = new Dexie('DarkIDEProjects');
+        db.version(1).stores({
+            projects: 'id, name, content, updatedAt'
+        });
+
+        // ==================== STATE ====================
+        let editorView = null;
+        let currentProjectId = 'default-project';
+        let currentProjectName = 'inventario_ferreteria';
+        let iaResponseText = '';
+        let originalSelectedText = '';
+        let lastSearchMatches = [];
+        let previewVisible = true;
+        let debounceTimer = null;
+
+        // ==================== DOM REFERENCES ====================
+        const editorWrapper = document.getElementById('editor-wrapper');
+        const previewPanel = document.getElementById('preview-panel');
+        const previewIframe = document.getElementById('preview-iframe');
+        const previewTimestamp = document.getElementById('preview-timestamp');
+        const drawerOverlay = document.getElementById('drawer-overlay');
+        const drawerIA = document.getElementById('drawer-ia');
+        const searchModalOverlay = document.getElementById('search-modal-overlay');
+        const toastContainer = document.getElementById('toast-container');
+
+        // ==================== TOAST SYSTEM ====================
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // ==================== CODE EDITOR INIT ====================
+        async function initEditor(initialContent) {
+            if (editorView) {
+                editorView.destroy();
+            }
+
+            const customTheme = EditorView.theme({
+                '&': { backgroundColor: '#1E1E2E', color: '#CDD6F4', height: '100%' },
+                '.cm-content': { fontFamily: "'JetBrains Mono','Fira Code',Consolas,Monaco,monospace",
+                fontSize: '14px', lineHeight: '1.6', padding: '10px 0' },
+                '.cm-gutters': { backgroundColor: '#313244', color: '#A6ADC8', border: 'none',
+                    fontSize: '12px' },
+                '.cm-activeLine': { backgroundColor: 'rgba(137,180,250,0.08)' },
+                '.cm-selectionBackground': { backgroundColor: 'rgba(137,180,250,0.3)' },
+                '.cm-cursor': { borderLeftColor: '#89B4FA' },
+                '.cm-matchingBracket': { backgroundColor: 'rgba(166,227,161,0.3)',
+                outline: '1px solid #A6E3A1' },
+            });
+
+            editorView = new EditorView({
+                doc: initialContent || DEFAULT_HTML,
+                extensions: [
+                    basicSetup,
+                    html(),
+                    customTheme,
+                    search({ top: true }),
+                    keymap.of(searchKeymap),
+                    EditorView.updateListener.of((update) => {
+                        if (update.docChanged) {
+                            schedulePreviewUpdate();
+                            scheduleAutoSave();
+                        }
+                    }),
+                    EditorView.domEventHandlers({
+                        keydown: (event) => {
+                            if (event.ctrlKey && event.key === 's') {
+                                event.preventDefault();
+                                saveProject();
+                            }
+                            if (event.ctrlKey && event.shiftKey && event.key === 'F') {
+                                event.preventDefault();
+                                openSearchModal();
+                            }
+                            if (event.key === 'F5') {
+                                event.preventDefault();
+                                togglePreview();
+                            }
+                        }
+                    })
+                ],
+                parent: editorWrapper,
+            });
+
+            // Initial preview
+            updatePreview();
+        }
+
+        // ==================== PREVIEW SYSTEM ====================
+        function schedulePreviewUpdate() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                updatePreview();
+            }, 400); // 400ms debounce for Win7 performance
+        }
+
+        function updatePreview() {
+            if (!previewVisible) return;
+            const content = editorView ? editorView.state.doc.toString() : '';
+            const sanitized = DOMPurify.sanitize(content, {
+                ADD_TAGS: ['script'],
+                ADD_ATTR: ['id', 'class', 'style', 'onclick'],
+                WHOLE_DOCUMENT: true,
+            });
+            const blob = new Blob([sanitized], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            if (previewIframe.src && previewIframe.src.startsWith('blob:')) {
+                URL.revokeObjectURL(previewIframe.src);
+            }
+            previewIframe.src = url;
+            const now = new Date();
+            previewTimestamp.textContent = `Actualizado: ${now.toLocaleTimeString('es-AR')}`;
+        }
+
+        function togglePreview() {
+            previewVisible = !previewVisible;
+            const btnPreview = document.getElementById('btn-preview');
+            if (previewVisible) {
+                previewPanel.classList.remove('hidden-panel');
+                btnPreview.classList.add('active');
+                updatePreview();
+            } else {
+                previewPanel.classList.add('hidden-panel');
+                btnPreview.classList.remove('active');
+            }
+            // Adjust editor panel flex
+            const editorPanel = document.getElementById('editor-panel');
+            if (!previewVisible) {
+                editorPanel.style.flex = '1';
+                editorPanel.style.borderRight = 'none';
+            } else {
+                editorPanel.style.flex = '1';
+                editorPanel.style.borderRight = '1px solid var(--border)';
+            }
+        }
+
+        // ==================== INDEXEDDB PERSISTENCE ====================
+        async function saveProject() {
+            if (!editorView) return;
+            const content = editorView.state.doc.toString();
+            try {
+                await db.projects.put({
+                    id: currentProjectId,
+                    name: currentProjectName,
+                    content: content,
+                    updatedAt: new Date().toISOString()
+                });
+                showToast('✅ Proyecto guardado exitosamente', 'success');
+            } catch (error) {
+                console.error('Error saving project:', error);
+                showToast('❌ Error al guardar el proyecto', 'error');
+            }
+        }
+
+        function scheduleAutoSave() {
+            // Auto-save after 30 seconds of inactivity (debounced)
+            clearTimeout(window._autoSaveTimer);
+            window._autoSaveTimer = setTimeout(() => {
+                saveProject();
+            }, 30000);
+        }
+
+        async function loadProject() {
+            try {
+                const project = await db.projects.get(currentProjectId);
+                if (project && project.content) {
+                    return project.content;
+                }
+            } catch (error) {
+                console.error('Error loading project:', error);
+            }
+            return DEFAULT_HTML;
+        }
+
+        async function exportHTML() {
+            if (!editorView) return;
+            const content = editorView.state.doc.toString();
+            const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentProjectName}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('📥 Archivo HTML exportado', 'success');
+        }
+
+        async function newProject() {
+            if (editorView && editorView.state.doc.toString().trim() !== DEFAULT_HTML.trim()) {
+                if (!confirm('¿Crear nuevo proyecto? Los cambios no guardados se perderán.')) return;
+            }
+            currentProjectId = 'project-' + Date.now();
+            currentProjectName = 'nuevo_proyecto';
+            await initEditor(DEFAULT_HTML);
+            showToast('📄 Nuevo proyecto creado', 'info');
+        }
+
+        // ==================== SEARCH & REPLACE SYSTEM ====================
+        function openSearchModal() {
+            const selection = editorView.state.selection.main;
+            const selectedText = editorView.state.doc.sliceString(selection.from, selection.to);
+            if (selectedText && selectedText.length > 0) {
+                document.getElementById('search-find').value = selectedText;
+            }
+            searchModalOverlay.classList.add('show');
+            document.getElementById('search-find').focus();
+            lastSearchMatches = [];
+            document.getElementById('match-count-display').textContent = '';
+            document.getElementById('search-replace').value = '';
+        }
+
+        function closeSearchModal() {
+            searchModalOverlay.classList.remove('show');
+        }
+
+        function findMatches() {
+            const findText = document.getElementById('search-find').value;
+            const useRegex = document.getElementById('search-regex').checked;
+            const caseSensitive = document.getElementById('search-case-sensitive').checked;
+            const docText = editorView.state.doc.toString();
+
+            if (!findText) {
+                document.getElementById('match-count-display').textContent = '⚠️ Ingresa texto para buscar';
+                lastSearchMatches = [];
+                return;
+            }
+
+            lastSearchMatches = [];
+            try {
+                let pattern;
+                if (useRegex) {
+                    let flags = 'gs';
+                    if (!caseSensitive) flags += 'i';
+                    pattern = new RegExp(findText, flags);
+                } else {
+                    const escaped = findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    let flags = 'gs';
+                    if (!caseSensitive) flags += 'i';
+                    pattern = new RegExp(escaped, flags);
+                }
+
+                let match;
+                while ((match = pattern.exec(docText)) !== null) {
+                    lastSearchMatches.push({ from: match.index, to: match.index + match[0].length,
+                        text: match[0] });
+                    if (match.index === pattern.lastIndex && match[0].length === 0) {
+                        pattern.lastIndex++;
+                    }
+                }
+
+                const count = lastSearchMatches.length;
+                const countDisplay = document.getElementById('match-count-display');
+                if (count > 0) {
+                    countDisplay.innerHTML =
+                        `<span class="match-count">${count}</span> coincidencia(s) encontrada(s)`;
+                    countDisplay.style.color = 'var(--success)';
+                } else {
+                    countDisplay.textContent = '❌ Sin coincidencias';
+                    countDisplay.style.color = 'var(--error)';
+                }
+
+                // Highlight first match in editor
+                if (lastSearchMatches.length > 0) {
+                    const first = lastSearchMatches[0];
+                    editorView.dispatch({
+                        selection: { anchor: first.from, head: first.to },
+                        scrollIntoView: true,
+                    });
+                }
+            } catch (e) {
+                document.getElementById('match-count-display').textContent = '⚠️ Error en expresión regular: ' + e
+                    .message;
+                lastSearchMatches = [];
+            }
+        }
+
+        function replaceAll() {
+            if (lastSearchMatches.length === 0) {
+                findMatches();
+                if (lastSearchMatches.length === 0) return;
+            }
+            const replaceText = document.getElementById('search-replace').value;
+            const docLength = editorView.state.doc.length;
+
+            // Apply replacements from end to start to preserve offsets
+            const sortedMatches = [...lastSearchMatches].sort((a, b) => b.from - a.from);
+            let transaction = editorView.state.update();
+
+            for (const match of sortedMatches) {
+                transaction = transaction.replace(match.from, match.to, replaceText);
+            }
+
+            editorView.dispatch(transaction);
+            showToast(`✅ ${sortedMatches.length} reemplazo(s) realizado(s)`, 'success');
+            lastSearchMatches = [];
+            document.getElementById('match-count-display').textContent = 'Reemplazos aplicados.';
+            updatePreview();
+        }
+
+        function replaceSelection() {
+            if (lastSearchMatches.length === 0) {
+                findMatches();
+                if (lastSearchMatches.length === 0) return;
+            }
+            const replaceText = document.getElementById('search-replace').value;
+            const selection = editorView.state.selection.main;
+            // Find match closest to cursor
+            let closestMatch = null;
+            let minDist = Infinity;
+            for (const match of lastSearchMatches) {
+                const dist = Math.abs(match.from - selection.from);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestMatch = match;
+                }
+            }
+            if (closestMatch) {
+                editorView.dispatch({
+                    changes: { from: closestMatch.from, to: closestMatch.to, insert: replaceText },
+                    selection: { anchor: closestMatch.from, head: closestMatch.from + replaceText.length },
+                });
+                showToast('✅ Reemplazo aplicado en la selección', 'success');
+                // Refresh matches
+                findMatches();
+                updatePreview();
+            }
+        }
+
+        // ==================== DRAWER SYSTEM ====================
+        function openIADrawer() {
+            drawerIA.classList.add('open');
+            drawerOverlay.classList.add('show');
+            // Get selected text
+            const selection = editorView.state.selection.main;
+            originalSelectedText = editorView.state.doc.sliceString(selection.from, selection.to);
+            if (!originalSelectedText || originalSelectedText.trim().length === 0) {
+                originalSelectedText = editorView.state.doc.toString().substring(0, Math.min(1500, editorView.state.doc
+                    .length));
+                document.getElementById('diff-display').innerHTML =
+                    '<span style="color:var(--text-muted);">ℹ️ No hay selección. Se usará el inicio del documento para la consulta.</span>';
+            } else {
+                document.getElementById('diff-display').innerHTML =
+                    `<span style="color:var(--text-muted);">📝 Texto seleccionado (${originalSelectedText.length} caracteres). Envía a Groq para analizar.</span>`;
+            }
+        }
+
+        function closeIADrawer() {
+            drawerIA.classList.remove('open');
+            drawerOverlay.classList.remove('show');
+        }
+
+        function closeAllDrawers() {
+            closeIADrawer();
+            closeSearchModal();
+        }
+
+        // ==================== GROQ API INTEGRATION ====================
+        function getAPIKey() {
+            const encrypted = localStorage.getItem('groq_api_key_encrypted');
+            if (encrypted) {
+                try {
+                    // Simple XOR "encryption" for demo (real AES-256 would need a library)
+                    const decoded = atob(encrypted);
+                    let key = '';
+                    for (let i = 0; i < decoded.length; i++) {
+                        key += String.fromCharCode(decoded.charCodeAt(i) ^ 42);
+                    }
+                    return key;
+                } catch (e) {
+                    return '';
+                }
+            }
+            return '';
+        }
+
+        function saveAPIKey(apiKey) {
+            if (!apiKey) {
+                localStorage.removeItem('groq_api_key_encrypted');
+                return;
+            }
+            // Simple XOR encryption
+            let encoded = '';
+            for (let i = 0; i < apiKey.length; i++) {
+                encoded += String.fromCharCode(apiKey.charCodeAt(i) ^ 42);
+            }
+            localStorage.setItem('groq_api_key_encrypted', btoa(encoded));
+        }
+
+        async function sendToGroq() {
+            const apiKey = getAPIKey();
+            if (!apiKey || apiKey.trim() === '') {
+                showToast('⚠️ Configura tu API Key de Groq primero', 'error');
+                return;
+            }
+
+            const model = document.getElementById('groq-model').value;
+            const promptTemplate = document.getElementById('prompt-template').value;
+            let customPrompt = document.getElementById('custom-prompt').value;
+            const statusEl = document.getElementById('groq-status');
+            const diffDisplay = document.getElementById('diff-display');
+
+            if (!originalSelectedText || originalSelectedText.trim().length === 0) {
+                originalSelectedText = editorView.state.doc.toString().substring(0, Math.min(2000, editorView.state.doc
+                    .length));
+            }
+
+            let systemPrompt = '';
+            switch (promptTemplate) {
+                case 'optimize':
+                    systemPrompt =
+                        'Eres un experto en HTML/CSS. Optimiza el siguiente código para mejorar rendimiento, semántica y legibilidad. Devuelve SOLO el código optimizado completo, sin explicaciones. No uses markdown code blocks.';
+                    break;
+                case 'refactor':
+                    systemPrompt =
+                        'Eres un desarrollador senior. Refactoriza el siguiente código HTML para hacerlo más mantenible y moderno. Devuelve SOLO el código refactorizado completo.';
+                    break;
+                case 'inventory':
+                    systemPrompt =
+                        'Crea o mejora una tabla de inventario de ferretería con columnas: Código, Producto, Categoría, Stock, Precio, Proveedor. Usa HTML semántico y CSS moderno. Devuelve SOLO el código completo.';
+                    break;
+                case 'responsive':
+                    systemPrompt =
+                        'Haz que el siguiente código HTML sea responsive y mobile-friendly. Agrega media queries y mejora la adaptabilidad. Devuelve SOLO el código completo.';
+                    break;
+                case 'custom':
+                    systemPrompt = customPrompt ||
+                        'Mejora el siguiente código HTML. Devuelve SOLO el código mejorado completo.';
+                    break;
+                default:
+                    systemPrompt = 'Mejora el siguiente código. Devuelve SOLO el código mejorado completo.';
+            }
+
+            statusEl.textContent = '⏳ Enviando a Groq...';
+            diffDisplay.innerHTML = '<span style="color:var(--warning);">⏳ Esperando respuesta de Groq...</span>';
+            iaResponseText = '';
+
+            try {
+                const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: originalSelectedText }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 4096,
+                        stream: true,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error?.message || `HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                statusEl.textContent = '📥 Recibiendo respuesta...';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6).trim();
+                            if (data === '[DONE]') continue;
+                            try {
+                                const parsed = JSON.parse(data);
+                                const delta = parsed.choices?.[0]?.delta?.content || '';
+                                iaResponseText += delta;
+                                // Display streaming diff
+                                diffDisplay.innerHTML = generateDiffHTML(originalSelectedText, iaResponseText);
+                                diffDisplay.scrollTop = diffDisplay.scrollHeight;
+                            } catch (e) {
+                                // Ignore parse errors for incomplete chunks
+                            }
+                        }
+                    }
+                }
+
+                statusEl.textContent = '✅ Respuesta completa';
+                diffDisplay.innerHTML = generateDiffHTML(originalSelectedText, iaResponseText);
+
+            } catch (error) {
+                statusEl.textContent = `❌ Error: ${error.message}`;
+                diffDisplay.innerHTML =
+                    `<span style="color:var(--error);">❌ Error al comunicarse con Groq: ${error.message}</span>`;
+                showToast('❌ Error en la comunicación con Groq', 'error');
+            }
+        }
+
+        function generateDiffHTML(original, modified) {
+            if (!modified || modified.trim().length === 0) {
+                return '<span style="color:var(--text-muted);">Sin respuesta aún...</span>';
+            }
+            // Simple line-by-line diff
+            const origLines = original.split('\n');
+            const modLines = modified.split('\n');
+            let html = '';
+            const maxLines = Math.max(origLines.length, modLines.length);
+
+            for (let i = 0; i < Math.min(maxLines, 200); i++) {
+                const origLine = i < origLines.length ? origLines[i] : '';
+                const modLine = i < modLines.length ? modLines[i] : '';
+
+                if (origLine === modLine) {
+                    html +=
+                        `<div class="diff-unchanged">  ${escapeHTML(origLine) || '&nbsp;'}</div>`;
+                } else {
+                    if (origLine && i < origLines.length) {
+                        html +=
+                            `<div class="diff-removed">- ${escapeHTML(origLine) || '&nbsp;'}</div>`;
+                    }
+                    if (modLine && i < modLines.length) {
+                        html +=
+                            `<div class="diff-added">+ ${escapeHTML(modLine) || '&nbsp;'}</div>`;
+                    }
+                }
+            }
+            if (maxLines > 200) {
+                html +=
+                    `<div class="diff-unchanged">... (${maxLines - 200} líneas más) ...</div>`;
+            }
+            return html || '<span style="color:var(--text-muted);">Sin diferencias</span>';
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function applyIAChanges() {
+            if (!iaResponseText || iaResponseText.trim().length === 0) {
+                showToast('⚠️ No hay cambios de IA para aplicar', 'error');
+                return;
+            }
+            const selection = editorView.state.selection.main;
+            const from = selection.from;
+            const to = selection.to;
+            const effectiveFrom = (from === to) ? 0 : from;
+            const effectiveTo = (from === to) ? editorView.state.doc.length : to;
+
+            editorView.dispatch({
+                changes: { from: effectiveFrom, to: effectiveTo, insert: iaResponseText },
+                selection: { anchor: effectiveFrom, head: effectiveFrom + iaResponseText.length },
+            });
+            showToast('✅ Cambios de IA aplicados al editor', 'success');
+            iaResponseText = '';
+            document.getElementById('diff-display').innerHTML =
+                '<span style="color:var(--text-muted);">Cambios aplicados. Selecciona nuevo código para otra consulta.</span>';
+            document.getElementById('groq-status').textContent = '';
+            updatePreview();
+        }
+
+        function discardIAChanges() {
+            iaResponseText = '';
+            document.getElementById('diff-display').innerHTML =
+                '<span style="color:var(--text-muted);">Cambios descartados.</span>';
+            document.getElementById('groq-status').textContent = '';
+            showToast('🗑️ Cambios de IA descartados', 'info');
+        }
+
+        // ==================== EVENT LISTENERS ====================
+        document.getElementById('btn-preview').addEventListener('click', togglePreview);
+        document.getElementById('btn-search').addEventListener('click', openSearchModal);
+        document.getElementById('btn-ia').addEventListener('click', openIADrawer);
+        document.getElementById('btn-save').addEventListener('click', saveProject);
+        document.getElementById('btn-export').addEventListener('click', exportHTML);
+        document.getElementById('btn-new').addEventListener('click', newProject);
+
+        // Drawer controls
+        document.getElementById('btn-close-ia-drawer').addEventListener('click', closeIADrawer);
+        drawerOverlay.addEventListener('click', closeAllDrawers);
+
+        // Search modal controls
+        document.getElementById('btn-close-search-modal').addEventListener('click', closeSearchModal);
+        document.getElementById('btn-search-cancel').addEventListener('click', closeSearchModal);
+        document.getElementById('btn-find-matches').addEventListener('click', findMatches);
+        document.getElementById('btn-replace-all').addEventListener('click', replaceAll);
+        document.getElementById('btn-replace-one').addEventListener('click', replaceSelection);
+
+        // IA controls
+        document.getElementById('btn-send-to-groq').addEventListener('click', sendToGroq);
+        document.getElementById('btn-apply-ia-changes').addEventListener('click', applyIAChanges);
+        document.getElementById('btn-discard-ia-changes').addEventListener('click', discardIAChanges);
+        document.getElementById('btn-save-api-key').addEventListener('click', () => {
+            const key = document.getElementById('groq-api-key').value.trim();
+            saveAPIKey(key);
+            if (key) {
+                showToast('🔒 API Key guardada (cifrada)', 'success');
+            } else {
+                showToast('🗑️ API Key eliminada', 'info');
+            }
+        });
+        document.getElementById('prompt-template').addEventListener('change', function() {
+            const customContainer = document.getElementById('custom-prompt-container');
+            if (this.value === 'custom') {
+                customContainer.style.display = 'block';
+            } else {
+                customContainer.style.display = 'none';
+            }
+        });
+
+        // Keyboard shortcuts for modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeAllDrawers();
+                closeSearchModal();
+            }
+        });
+
+        // Load saved API key on startup
+        const savedKey = getAPIKey();
+        if (savedKey) {
+            document.getElementById('groq-api-key').value = savedKey;
+        }
+
+        // ==================== STARTUP ====================
+        async function startup() {
+            const content = await loadProject();
+            await initEditor(content);
+            updatePreview();
+            showToast('🚀 Explorador Dark-IDE listo', 'info');
+
+            // Auto-save on page unload
+            window.addEventListener('beforeunload', () => {
+                if (editorView) {
+                    const content = editorView.state.doc.toString();
+                    db.projects.put({
+                        id: currentProjectId,
+                        name: currentProjectName,
+                        content: content,
+                        updatedAt: new Date().toISOString()
+                    }).catch(() => {});
+                }
+            });
+        }
+
+        // Initialize icons
+        if (window.lucide) {
+            window.lucide.createIcons();
+        }
+
+        startup().catch(err => {
+            console.error('Startup error:', err);
+            initEditor(DEFAULT_HTML);
+            showToast('⚠️ Error al cargar proyecto. Usando demo.', 'error');
+        });
+
+        console.log('%c🔧 Explorador Dark-IDE v1.0 %c| %cComité de Expertos - Enero 2025',
+            'color:#89B4FA;font-size:16px;', '', 'color:#A6ADC8;');
+        console.log('%cStack: Vanilla JS + CodeMirror 6 + Groq API + IndexedDB',
+        'color:#A6E3A1;');
+        console.log('%cOptimizado para Windows 7 · 1280x720 · Soft Dark Theme',
+        'color:#CDD6F4;');
+    </script>
+</body>
+</html>
